@@ -375,26 +375,73 @@ function App() {
 
         {tab === 'office' && (
           <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
-            <h3 style={{ marginTop: 0 }}>🗺 Virtual Office (Pokémon style)</h3>
-            <p style={{ color: UI.sub }}>Leyenda: 🟢 entrenando · 🟡 en review · 🔴 bloqueado · ⚪ idle</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }}>
-              {team.map((t, i) => {
-                const status = i % 4 === 0 ? 'running' : i % 4 === 1 ? 'review' : i % 4 === 2 ? 'blocked' : 'idle';
-                const badge = status === 'running' ? '🟢' : status === 'review' ? '🟡' : status === 'blocked' ? '🔴' : '⚪';
-                const area = i % 3 === 0 ? 'Planning Gym' : i % 3 === 1 ? 'Dev Lab' : 'Content Studio';
-                return (
-                  <article key={t.id} style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 10, background: '#0f1730' }}>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <img src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(t.name + '-trainer')}`} alt={t.name} style={{ width: 72, height: 72 }} />
-                      <div>
-                        <div><b>{t.name}</b> {badge}</div>
-                        <div style={{ color: UI.sub, fontSize: 12 }}>{t.role}</div>
-                        <div style={{ fontSize: 12 }}>Zona: {area}</div>
+            <h3 style={{ marginTop: 0 }}>🗺 Virtual Office v6 (Pokémon Ops Map)</h3>
+            <p style={{ color: UI.sub }}>Leyenda: 🟢 entrenando · 🟡 review · 🔴 bloqueado · ⚪ idle · 🔵 handoff</p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12 }}>
+              <div style={{ border: `1px solid ${UI.border}`, borderRadius: 12, background: '#0a1228', padding: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8, marginBottom: 8 }}>
+                  {[
+                    { key: 'planning', name: 'Planning Gym', emoji: '🧭' },
+                    { key: 'dev', name: 'Dev Lab', emoji: '🛠️' },
+                    { key: 'content', name: 'Content Studio', emoji: '🎬' },
+                    { key: 'qa', name: 'QA Arena', emoji: '🧪' },
+                    { key: 'review', name: 'Review Room', emoji: '📝' },
+                    { key: 'publish', name: 'Publish Gate', emoji: '🚀' }
+                  ].map((z, i) => {
+                    const occupants = team.filter((_, idx) => idx % 6 === i);
+                    const blockedCount = occupants.filter((_, idx) => (idx + i) % 4 === 2).length;
+                    return (
+                      <div key={z.key} style={{ border: `1px solid ${UI.border}`, borderRadius: 10, padding: 8, background: blockedCount ? '#3a1721' : '#111c3d' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{z.emoji} {z.name}</div>
+                        <div style={{ color: UI.sub, fontSize: 12, marginBottom: 6 }}>Agentes: {occupants.length}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {occupants.map((t, j) => {
+                            const status = (j + i) % 4 === 0 ? 'running' : (j + i) % 4 === 1 ? 'review' : (j + i) % 4 === 2 ? 'blocked' : 'idle';
+                            const badge = status === 'running' ? '🟢' : status === 'review' ? '🟡' : status === 'blocked' ? '🔴' : '⚪';
+                            return <span key={t.id} title={`${t.name} · ${status}`} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 999, padding: '2px 6px', background: '#0f1730' }}>{badge} {t.name}</span>;
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                );
-              })}
+                    );
+                  })}
+                </div>
+
+                <div style={{ borderTop: `1px dashed ${UI.border}`, paddingTop: 8 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>🔵 Handoffs en vivo</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {tasks.slice(0, 6).map((t, i) => {
+                      const from = i % 2 === 0 ? 'Planning Gym' : 'Dev Lab';
+                      const to = t.status === 'done' ? 'Publish Gate' : t.status === 'blocked' ? 'Review Room' : 'QA Arena';
+                      return <div key={t.id} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 8, padding: 6, background: '#111c3d' }}>🔵 {from} → {to} · <b>{t.title}</b></div>;
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                <article style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 10, background: '#0f1730' }}>
+                  <h4 style={{ marginTop: 0 }}>⚠️ Alertas de operación</h4>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    <li>Bloqueadas: {tasks.filter(t => t.status === 'blocked').length}</li>
+                    <li>WIP activo: {tasks.filter(t => t.status === 'in_progress').length}</li>
+                    <li>Piezas en publish: {pipeline.filter(p => p.stage === 'publish').length}</li>
+                    <li>Cron jobs: {insights.cronJobsCount ?? 0}</li>
+                  </ul>
+                </article>
+
+                <article style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 10, background: '#0f1730' }}>
+                  <h4 style={{ marginTop: 0 }}>📡 Presence Feed</h4>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {team.map((t, i) => {
+                      const state = i % 4 === 0 ? 'Entrenando' : i % 4 === 1 ? 'En review' : i % 4 === 2 ? 'Bloqueado' : 'Idle';
+                      const icon = i % 4 === 0 ? '🟢' : i % 4 === 1 ? '🟡' : i % 4 === 2 ? '🔴' : '⚪';
+                      const area = i % 3 === 0 ? 'Planning Gym' : i % 3 === 1 ? 'Dev Lab' : 'Content Studio';
+                      return <div key={t.id} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 8, padding: 6 }}>{icon} <b>{t.name}</b> · {state} · {area}</div>;
+                    })}
+                  </div>
+                </article>
+              </div>
             </div>
           </section>
         )}
