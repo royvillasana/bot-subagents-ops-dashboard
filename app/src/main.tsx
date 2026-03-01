@@ -8,7 +8,60 @@ type MemoryHit = { file: string; line?: number; excerpt: string };
 type Team = { id: string; name: string; role: string; type: string; responsibilities: string[] };
 type Office = { id: string; name: string; role: string; avatar: string; desk: string; atComputer: boolean; status: string };
 
-const API = (import.meta as any).env?.VITE_API_BASE || 'http://127.0.0.1:8790';
+type LocalStore = {
+  tasks: Task[];
+  pipeline: Pipeline[];
+  calendar: Cal[];
+  team: Team[];
+  memories: MemoryHit[];
+};
+
+const DEFAULT_API = (import.meta as any).env?.VITE_API_BASE || 'http://127.0.0.1:8790';
+const LS_API_KEY = 'mission_control_api_base';
+const LS_STORE_KEY = 'mission_control_local_store_v1';
+
+function seedStore(): LocalStore {
+  return {
+    tasks: [
+      { id: 't-seed-1', title: 'Definir plan comercial UX Ops', status: 'in_progress', assignee: 'Stanley', priority: 'high', dueAt: null, notes: '' },
+      { id: 't-seed-2', title: 'Aprobar propuesta final', status: 'todo', assignee: 'Roy', priority: 'medium', dueAt: null, notes: '' }
+    ],
+    pipeline: [
+      { id: 'p-seed-1', stage: 'ideas', title: 'Post: UX Ops con IA', script: '', imageUrls: [], status: 'draft', assignee: 'Roy', updatedAt: new Date().toISOString() }
+    ],
+    calendar: [
+      { id: 'e-seed-1', title: 'Revisión semanal', startsAt: new Date(Date.now() + 86400000).toISOString(), source: 'manual', status: 'scheduled' }
+    ],
+    team: [
+      { id: 'agent-main', name: 'Stanley', role: 'Lead Operator', type: 'core', responsibilities: ['Orquestación', 'QA', 'Entrega'] },
+      { id: 'agent-dev', name: 'DevAgent', role: 'Developer', type: 'subagent', responsibilities: ['Frontend', 'Backend', 'Integraciones'] },
+      { id: 'agent-writer', name: 'WriterAgent', role: 'Writer', type: 'subagent', responsibilities: ['Guiones', 'Copy', 'Research'] },
+      { id: 'agent-designer', name: 'DesignAgent', role: 'Designer', type: 'subagent', responsibilities: ['UX', 'Visual', 'Prototipos'] }
+    ],
+    memories: [
+      { file: 'memory/2026-03-01.md', line: 1, excerpt: 'Resumen operativo del día y decisiones clave.' },
+      { file: 'MEMORY.md', line: 1, excerpt: 'Memoria de largo plazo curada.' }
+    ]
+  };
+}
+
+function loadLocalStore(): LocalStore {
+  try {
+    const raw = localStorage.getItem(LS_STORE_KEY);
+    if (!raw) return seedStore();
+    return JSON.parse(raw);
+  } catch {
+    return seedStore();
+  }
+}
+
+function saveLocalStore(store: LocalStore) {
+  localStorage.setItem(LS_STORE_KEY, JSON.stringify(store));
+}
+
+function uid(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 14, marginBottom: 14 }}><h3 style={{ marginTop: 0 }}>{title}</h3>{children}</section>;
@@ -34,8 +87,12 @@ function Tabs({ tab, setTab }: { tab: string; setTab: (x: string) => void }) {
 
 function App() {
   const [tab, setTab] = useState('tasks');
+  const [apiBase, setApiBase] = useState<string>(() => localStorage.getItem(LS_API_KEY) || DEFAULT_API);
+  const [apiInput, setApiInput] = useState<string>(() => localStorage.getItem(LS_API_KEY) || DEFAULT_API);
   const [oc, setOc] = useState<boolean | null>(null);
   const [lastSync, setLastSync] = useState('');
+  const [source, setSource] = useState<'api' | 'local'>('local');
+  const [apiError, setApiError] = useState<string>('');
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pipeline, setPipeline] = useState<Pipeline[]>([]);
@@ -46,68 +103,150 @@ function App() {
 
   const [qMem, setQMem] = useState('');
 
-  // forms
   const [newTask, setNewTask] = useState({ title: '', assignee: 'Stanley', priority: 'medium', dueAt: '' });
   const [newPipe, setNewPipe] = useState({ title: '', stage: 'ideas', assignee: 'Roy' });
   const [newEvent, setNewEvent] = useState({ title: '', startsAt: '' });
 
-  async function loadAll() {
-    const [s, t, p, c, m, tm, of] = await Promise.all([
-      fetch(`${API}/api/openclaw/status`).then(r => r.json()).catch(() => ({ ok: false })),
-      fetch(`${API}/api/tasks`).then(r => r.json()).catch(() => ({ items: [] })),
-      fetch(`${API}/api/pipeline`).then(r => r.json()).catch(() => ({ items: [] })),
-      fetch(`${API}/api/calendar`).then(r => r.json()).catch(() => ({ items: [] })),
-      fetch(`${API}/api/memories`).then(r => r.json()).catch(() => ({ items: [] })),
-      fetch(`${API}/api/team`).then(r => r.json()).catch(() => ({ items: [] })),
-      fetch(`${API}/api/office`).then(r => r.json()).catch(() => ({ items: [] }))
-    ]);
-    setOc(Boolean(s?.ok));
-    setTasks(t.items || []);
-    setPipeline(p.items || []);
-    setCalendar(c.items || []);
-    setMemories(m.items || []);
-    setTeam(tm.items || []);
-    setOffice(of.items || []);
+  const mixedContentRisk = typeof window !== 'undefined' && window.location.protocol === 'https:' && apiBase.startsWith('http://');
+
+  function hydrateFromLocal() {
+    const st = loadLocalStore();
+    setTasks(st.tasks);
+    setPipeline(st.pipeline);
+    setCalendar(st.calendar);
+    setMemories(st.memories);
+    setTeam(st.team);
+    setOffice(st.team.map((m, i) => ({
+      id: m.id,
+      name: m.name,
+      role: m.role,
+      avatar: `https://api.dicebear.com/9.x/bottts/svg?seed=${encodeURIComponent(m.name)}`,
+      desk: `Desk-${i + 1}`,
+      atComputer: true,
+      status: 'running'
+    })));
+    setSource('local');
+    setOc(false);
     setLastSync(new Date().toLocaleTimeString());
+  }
+
+  async function loadAll() {
+    if (mixedContentRisk) {
+      setApiError('Tu página está en HTTPS (github.io) y el API está en HTTP. El navegador lo bloquea por seguridad.');
+      hydrateFromLocal();
+      return;
+    }
+
+    try {
+      const [s, t, p, c, m, tm, of] = await Promise.all([
+        fetch(`${apiBase}/api/openclaw/status`).then(r => r.json()),
+        fetch(`${apiBase}/api/tasks`).then(r => r.json()),
+        fetch(`${apiBase}/api/pipeline`).then(r => r.json()),
+        fetch(`${apiBase}/api/calendar`).then(r => r.json()),
+        fetch(`${apiBase}/api/memories`).then(r => r.json()),
+        fetch(`${apiBase}/api/team`).then(r => r.json()),
+        fetch(`${apiBase}/api/office`).then(r => r.json())
+      ]);
+      setOc(Boolean(s?.ok));
+      setTasks(t.items || []);
+      setPipeline(p.items || []);
+      setCalendar(c.items || []);
+      setMemories(m.items || []);
+      setTeam(tm.items || []);
+      setOffice(of.items || []);
+      setSource('api');
+      setApiError('');
+      setLastSync(new Date().toLocaleTimeString());
+    } catch (e: any) {
+      setApiError(`API no responde: ${String(e?.message || e)}`);
+      hydrateFromLocal();
+    }
   }
 
   useEffect(() => {
     loadAll().catch(() => void 0);
     const i = setInterval(() => loadAll().catch(() => void 0), 6000);
     return () => clearInterval(i);
-  }, []);
+  }, [apiBase]);
+
+  function persistLocal(partial: Partial<LocalStore>) {
+    const current = loadLocalStore();
+    const next = { ...current, ...partial };
+    saveLocalStore(next);
+  }
 
   async function createTask() {
-    await fetch(`${API}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newTask, dueAt: newTask.dueAt || null }) });
+    if (source === 'api') {
+      try {
+        await fetch(`${apiBase}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newTask, dueAt: newTask.dueAt || null }) });
+      } catch {}
+      await loadAll();
+      return;
+    }
+    const row: Task = { id: uid('t'), title: newTask.title || 'Nueva tarea', status: 'todo', assignee: newTask.assignee, priority: newTask.priority, dueAt: newTask.dueAt || null, notes: '' };
+    const next = [row, ...tasks];
+    setTasks(next);
+    persistLocal({ tasks: next, calendar: [...calendar, ...(row.dueAt ? [{ id: uid('e'), title: `Task: ${row.title}`, startsAt: row.dueAt, source: 'task', status: row.status }] : [])] });
     setNewTask({ title: '', assignee: 'Stanley', priority: 'medium', dueAt: '' });
-    await loadAll();
   }
 
   async function patchTask(id: string, patch: Partial<Task>) {
-    await fetch(`${API}/api/tasks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
-    await loadAll();
+    if (source === 'api') {
+      try { await fetch(`${apiBase}/api/tasks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }); } catch {}
+      await loadAll();
+      return;
+    }
+    const next = tasks.map(t => t.id === id ? { ...t, ...patch } : t);
+    setTasks(next);
+    persistLocal({ tasks: next });
   }
 
   async function createPipeline() {
-    await fetch(`${API}/api/pipeline`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(newPipe) });
+    if (source === 'api') {
+      try { await fetch(`${apiBase}/api/pipeline`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(newPipe) }); } catch {}
+      await loadAll();
+      return;
+    }
+    const row: Pipeline = { id: uid('p'), stage: newPipe.stage, title: newPipe.title || 'Nueva idea', script: '', imageUrls: [], status: 'draft', assignee: newPipe.assignee, updatedAt: new Date().toISOString() };
+    const next = [row, ...pipeline];
+    setPipeline(next);
+    persistLocal({ pipeline: next });
     setNewPipe({ title: '', stage: 'ideas', assignee: 'Roy' });
-    await loadAll();
   }
 
   async function patchPipeline(id: string, patch: Partial<Pipeline>) {
-    await fetch(`${API}/api/pipeline/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
-    await loadAll();
+    if (source === 'api') {
+      try { await fetch(`${apiBase}/api/pipeline/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }); } catch {}
+      await loadAll();
+      return;
+    }
+    const next = pipeline.map(p => p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p);
+    setPipeline(next);
+    persistLocal({ pipeline: next });
   }
 
   async function createEvent() {
-    await fetch(`${API}/api/calendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newEvent, source: 'manual' }) });
+    if (source === 'api') {
+      try { await fetch(`${apiBase}/api/calendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newEvent, source: 'manual' }) }); } catch {}
+      await loadAll();
+      return;
+    }
+    const row: Cal = { id: uid('e'), title: newEvent.title || 'Evento', startsAt: newEvent.startsAt || new Date().toISOString(), source: 'manual', status: 'scheduled' };
+    const next = [...calendar, row];
+    setCalendar(next);
+    persistLocal({ calendar: next });
     setNewEvent({ title: '', startsAt: '' });
-    await loadAll();
   }
 
   async function searchMem() {
-    const d = await fetch(`${API}/api/memories?q=${encodeURIComponent(qMem)}`).then(r => r.json()).catch(() => ({ items: [] }));
-    setMemories(d.items || []);
+    if (source === 'api') {
+      const d = await fetch(`${apiBase}/api/memories?q=${encodeURIComponent(qMem)}`).then(r => r.json()).catch(() => ({ items: [] }));
+      setMemories(d.items || []);
+      return;
+    }
+    const term = qMem.trim().toLowerCase();
+    const local = loadLocalStore().memories;
+    setMemories(!term ? local : local.filter(m => `${m.file} ${m.excerpt}`.toLowerCase().includes(term)));
   }
 
   const tasksByStatus = useMemo(() => {
@@ -116,42 +255,58 @@ function App() {
     return g;
   }, [tasks]);
 
+  function saveApiBase() {
+    localStorage.setItem(LS_API_KEY, apiInput.trim());
+    setApiBase(apiInput.trim());
+  }
+
   return (
     <main style={{ fontFamily: 'Inter,system-ui,sans-serif', padding: 24, maxWidth: 1280, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 4 }}>Mission Control Dashboard v3</h1>
-      <p style={{ marginTop: 0, color: '#4b5563' }}>OpenClaw: <strong style={{ color: oc ? '#15803d' : '#b91c1c' }}>{oc === null ? 'verificando...' : oc ? 'conectado' : 'sin conexión'}</strong> · último refresh: {lastSync || '-'}</p>
+      <h1 style={{ marginBottom: 4 }}>Mission Control Dashboard v4.1</h1>
+      <p style={{ marginTop: 0, color: '#4b5563' }}>
+        OpenClaw: <strong style={{ color: oc ? '#15803d' : '#b91c1c' }}>{oc === null ? 'verificando...' : oc ? 'conectado' : 'sin conexión'}</strong>
+        {' · '}source: <strong>{source}</strong> · último refresh: {lastSync || '-'}
+      </p>
+
+      <Card title="Conexión / Configuración">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input value={apiInput} onChange={e => setApiInput(e.target.value)} placeholder="API Base URL" style={{ padding: 8, minWidth: 360 }} />
+          <button onClick={saveApiBase}>Guardar API URL</button>
+          <button onClick={() => loadAll()}>Reintentar conexión</button>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>Ejemplo local: http://76.13.51.1:8790</span>
+        </div>
+        {!!apiError && <p style={{ color: '#b91c1c', marginBottom: 0 }}>{apiError}</p>}
+      </Card>
 
       <Tabs tab={tab} setTab={setTab} />
 
       {tab === 'tasks' && (
-        <>
-          <Card title="Task Board (asignación Roy / Stanley)">
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-              <input placeholder='Nueva tarea' value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} style={{ padding: 8, borderRadius: 8, border: '1px solid #d1d5db', minWidth: 260 }} />
-              <select value={newTask.assignee} onChange={e => setNewTask({ ...newTask, assignee: e.target.value })} style={{ padding: 8 }}><option>Roy</option><option>Stanley</option></select>
-              <select value={newTask.priority} onChange={e => setNewTask({ ...newTask, priority: e.target.value })} style={{ padding: 8 }}><option>low</option><option>medium</option><option>high</option></select>
-              <input type='datetime-local' value={newTask.dueAt} onChange={e => setNewTask({ ...newTask, dueAt: e.target.value })} style={{ padding: 8 }} />
-              <button onClick={createTask}>Agregar</button>
-            </div>
-            <p style={{ fontSize: 13, color: '#6b7280' }}>Resumen: {Object.entries(tasksByStatus).map(([k,v]) => `${k}:${v}`).join(' · ') || 'sin tareas'}</p>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: '#f9fafb' }}><th style={{textAlign:'left',padding:8}}>Task</th><th style={{textAlign:'left',padding:8}}>Assignee</th><th style={{textAlign:'left',padding:8}}>Status</th><th style={{textAlign:'left',padding:8}}>Due</th><th/></tr></thead>
-              <tbody>
-                {tasks.map(t => (
-                  <tr key={t.id}>
-                    <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>{t.title}</td>
-                    <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>{t.assignee}</td>
-                    <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>
-                      <select value={t.status} onChange={e => patchTask(t.id,{status:e.target.value})}><option>todo</option><option>in_progress</option><option>blocked</option><option>done</option></select>
-                    </td>
-                    <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>{t.dueAt ? new Date(t.dueAt).toLocaleString() : '-'}</td>
-                    <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}><button onClick={() => patchTask(t.id,{assignee:t.assignee==='Roy'?'Stanley':'Roy'})}>Reasignar</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        </>
+        <Card title="Task Board (asignación Roy / Stanley)">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            <input placeholder='Nueva tarea' value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} style={{ padding: 8, borderRadius: 8, border: '1px solid #d1d5db', minWidth: 260 }} />
+            <select value={newTask.assignee} onChange={e => setNewTask({ ...newTask, assignee: e.target.value })} style={{ padding: 8 }}><option>Roy</option><option>Stanley</option></select>
+            <select value={newTask.priority} onChange={e => setNewTask({ ...newTask, priority: e.target.value })} style={{ padding: 8 }}><option>low</option><option>medium</option><option>high</option></select>
+            <input type='datetime-local' value={newTask.dueAt} onChange={e => setNewTask({ ...newTask, dueAt: e.target.value })} style={{ padding: 8 }} />
+            <button onClick={createTask}>Agregar</button>
+          </div>
+          <p style={{ fontSize: 13, color: '#6b7280' }}>Resumen: {Object.entries(tasksByStatus).map(([k,v]) => `${k}:${v}`).join(' · ') || 'sin tareas'}</p>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr style={{ background: '#f9fafb' }}><th style={{textAlign:'left',padding:8}}>Task</th><th style={{textAlign:'left',padding:8}}>Assignee</th><th style={{textAlign:'left',padding:8}}>Status</th><th style={{textAlign:'left',padding:8}}>Due</th><th/></tr></thead>
+            <tbody>
+              {tasks.map(t => (
+                <tr key={t.id}>
+                  <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>{t.title}</td>
+                  <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>{t.assignee}</td>
+                  <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>
+                    <select value={t.status} onChange={e => patchTask(t.id,{status:e.target.value})}><option>todo</option><option>in_progress</option><option>blocked</option><option>done</option></select>
+                  </td>
+                  <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}>{t.dueAt ? new Date(t.dueAt).toLocaleString() : '-'}</td>
+                  <td style={{padding:8,borderTop:'1px solid #f3f4f6'}}><button onClick={() => patchTask(t.id,{assignee:t.assignee==='Roy'?'Stanley':'Roy'})}>Reasignar</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
       )}
 
       {tab === 'pipeline' && (
