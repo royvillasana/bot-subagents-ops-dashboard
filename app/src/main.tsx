@@ -21,8 +21,11 @@ const LS_API_KEY = 'mission_control_api_base';
 const LS_STORE_KEY = 'mission_control_local_store_v1';
 
 async function apiFetch(url: string, init: RequestInit = {}) {
+  const u = new URL(url);
+  const isPinggy = /pinggy\.link$/i.test(u.hostname);
+  const extra = isPinggy ? { 'X-Pinggy-No-Screen': '1' } : {};
   const headers = {
-    'X-Pinggy-No-Screen': '1',
+    ...extra,
     ...(init.headers || {})
   } as Record<string, string>;
   return fetch(url, { ...init, headers });
