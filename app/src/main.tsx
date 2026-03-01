@@ -375,69 +375,99 @@ function App() {
 
         {tab === 'office' && (
           <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
-            <h3 style={{ marginTop: 0 }}>🗺 Virtual Office v6 (Pokémon Ops Map)</h3>
-            <p style={{ color: UI.sub }}>Leyenda: 🟢 entrenando · 🟡 review · 🔴 bloqueado · ⚪ idle · 🔵 handoff</p>
+            <h3 style={{ marginTop: 0 }}>🕹️ Virtual Office v7 (2D Pixel Art)</h3>
+            <p style={{ color: UI.sub }}>Ahora sí: mapa 2D pixel-art + sprites de agentes + rutas de handoff.</p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12 }}>
-              <div style={{ border: `1px solid ${UI.border}`, borderRadius: 12, background: '#0a1228', padding: 10 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12 }}>
+              <div style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 8, background: '#081027' }}>
+                <div style={{
+                  position: 'relative',
+                  height: 430,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  border: `1px solid ${UI.border}`,
+                  background: 'repeating-linear-gradient(0deg,#0f1a3a 0px,#0f1a3a 16px,#132248 16px,#132248 32px), repeating-linear-gradient(90deg,#0f1a3a 0px,#0f1a3a 16px,#132248 16px,#132248 32px)'
+                }}>
+                  {/* zones */}
                   {[
-                    { key: 'planning', name: 'Planning Gym', emoji: '🧭' },
-                    { key: 'dev', name: 'Dev Lab', emoji: '🛠️' },
-                    { key: 'content', name: 'Content Studio', emoji: '🎬' },
-                    { key: 'qa', name: 'QA Arena', emoji: '🧪' },
-                    { key: 'review', name: 'Review Room', emoji: '📝' },
-                    { key: 'publish', name: 'Publish Gate', emoji: '🚀' }
-                  ].map((z, i) => {
-                    const occupants = team.filter((_, idx) => idx % 6 === i);
-                    const blockedCount = occupants.filter((_, idx) => (idx + i) % 4 === 2).length;
+                    { key: 'planning', name: 'Planning Gym', x: 14, y: 16, w: 180, h: 110, c: '#1b4a7a' },
+                    { key: 'dev', name: 'Dev Lab', x: 220, y: 16, w: 190, h: 110, c: '#24503a' },
+                    { key: 'content', name: 'Content Studio', x: 430, y: 16, w: 180, h: 110, c: '#5a2f2f' },
+                    { key: 'qa', name: 'QA Arena', x: 14, y: 150, w: 180, h: 110, c: '#3f3b70' },
+                    { key: 'review', name: 'Review Room', x: 220, y: 150, w: 190, h: 110, c: '#5a4a1e' },
+                    { key: 'publish', name: 'Publish Gate', x: 430, y: 150, w: 180, h: 110, c: '#1f5a52' }
+                  ].map(z => (
+                    <div key={z.key} style={{ position: 'absolute', left: z.x, top: z.y, width: z.w, height: z.h, border: '2px solid #9fb3d9', borderRadius: 8, background: `${z.c}cc`, boxShadow: 'inset 0 0 0 2px rgba(255,255,255,.08)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, padding: '4px 6px', color: '#eef4ff' }}>{z.name}</div>
+                    </div>
+                  ))}
+
+                  {/* simple handoff paths */}
+                  <svg width="100%" height="100%" viewBox="0 0 640 430" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                    <defs>
+                      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                        <polygon points="0 0, 8 4, 0 8" fill="#60a5fa" />
+                      </marker>
+                    </defs>
+                    <line x1="190" y1="75" x2="220" y2="75" stroke="#60a5fa" strokeWidth="3" markerEnd="url(#arrow)" opacity="0.8"/>
+                    <line x1="410" y1="75" x2="430" y2="75" stroke="#60a5fa" strokeWidth="3" markerEnd="url(#arrow)" opacity="0.8"/>
+                    <line x1="320" y1="130" x2="320" y2="150" stroke="#60a5fa" strokeWidth="3" markerEnd="url(#arrow)" opacity="0.8"/>
+                    <line x1="410" y1="205" x2="430" y2="205" stroke="#60a5fa" strokeWidth="3" markerEnd="url(#arrow)" opacity="0.8"/>
+                  </svg>
+
+                  {/* agents as pixel sprites */}
+                  {team.map((t, i) => {
+                    const pos = [
+                      {x:40,y:72, zone:'Planning Gym'},
+                      {x:270,y:72, zone:'Dev Lab'},
+                      {x:470,y:72, zone:'Content Studio'},
+                      {x:40,y:205, zone:'QA Arena'},
+                      {x:280,y:205, zone:'Review Room'},
+                      {x:480,y:205, zone:'Publish Gate'},
+                    ][i % 6];
+                    const mode = i % 4 === 0 ? 'running' : i % 4 === 1 ? 'review' : i % 4 === 2 ? 'blocked' : 'idle';
+                    const dot = mode === 'running' ? '#22c55e' : mode === 'review' ? '#facc15' : mode === 'blocked' ? '#ef4444' : '#d1d5db';
+                    const bob = i % 2 === 0 ? 'translateY(0px)' : 'translateY(-2px)';
                     return (
-                      <div key={z.key} style={{ border: `1px solid ${UI.border}`, borderRadius: 10, padding: 8, background: blockedCount ? '#3a1721' : '#111c3d' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>{z.emoji} {z.name}</div>
-                        <div style={{ color: UI.sub, fontSize: 12, marginBottom: 6 }}>Agentes: {occupants.length}</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                          {occupants.map((t, j) => {
-                            const status = (j + i) % 4 === 0 ? 'running' : (j + i) % 4 === 1 ? 'review' : (j + i) % 4 === 2 ? 'blocked' : 'idle';
-                            const badge = status === 'running' ? '🟢' : status === 'review' ? '🟡' : status === 'blocked' ? '🔴' : '⚪';
-                            return <span key={t.id} title={`${t.name} · ${status}`} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 999, padding: '2px 6px', background: '#0f1730' }}>{badge} {t.name}</span>;
-                          })}
+                      <div key={t.id} title={`${t.name} · ${mode} · ${pos.zone}`} style={{ position:'absolute', left: pos.x, top: pos.y, width: 72, textAlign:'center', transform:bob }}>
+                        <div style={{ position:'relative', display:'inline-block' }}>
+                          <img src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(t.name+'-sprite')}`} alt={t.name} style={{ width: 44, height: 44, imageRendering: 'pixelated', border: '2px solid #93c5fd', borderRadius: 6, background:'#0b1220' }} />
+                          <span style={{ position:'absolute', right:-4, top:-4, width:10, height:10, borderRadius:999, background:dot, border:'1px solid #0b1220' }} />
                         </div>
+                        <div style={{ fontSize: 11, marginTop: 2, color:'#e5edff' }}>{t.name}</div>
                       </div>
                     );
                   })}
-                </div>
-
-                <div style={{ borderTop: `1px dashed ${UI.border}`, paddingTop: 8 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>🔵 Handoffs en vivo</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                    {tasks.slice(0, 6).map((t, i) => {
-                      const from = i % 2 === 0 ? 'Planning Gym' : 'Dev Lab';
-                      const to = t.status === 'done' ? 'Publish Gate' : t.status === 'blocked' ? 'Review Room' : 'QA Arena';
-                      return <div key={t.id} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 8, padding: 6, background: '#111c3d' }}>🔵 {from} → {to} · <b>{t.title}</b></div>;
-                    })}
-                  </div>
                 </div>
               </div>
 
               <div style={{ display: 'grid', gap: 10 }}>
                 <article style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 10, background: '#0f1730' }}>
-                  <h4 style={{ marginTop: 0 }}>⚠️ Alertas de operación</h4>
+                  <h4 style={{ marginTop: 0 }}>📡 Presence</h4>
+                  {team.map((t, i) => {
+                    const state = i % 4 === 0 ? 'Entrenando' : i % 4 === 1 ? 'Review' : i % 4 === 2 ? 'Bloqueado' : 'Idle';
+                    const icon = i % 4 === 0 ? '🟢' : i % 4 === 1 ? '🟡' : i % 4 === 2 ? '🔴' : '⚪';
+                    return <div key={t.id} style={{ fontSize: 12, marginBottom: 6 }}>{icon} <b>{t.name}</b> · {state}</div>;
+                  })}
+                </article>
+
+                <article style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 10, background: '#0f1730' }}>
+                  <h4 style={{ marginTop: 0 }}>⚠️ Alertas</h4>
                   <ul style={{ margin: 0, paddingLeft: 18 }}>
                     <li>Bloqueadas: {tasks.filter(t => t.status === 'blocked').length}</li>
-                    <li>WIP activo: {tasks.filter(t => t.status === 'in_progress').length}</li>
-                    <li>Piezas en publish: {pipeline.filter(p => p.stage === 'publish').length}</li>
+                    <li>WIP: {tasks.filter(t => t.status === 'in_progress').length}</li>
+                    <li>Publish: {pipeline.filter(p => p.stage === 'publish').length}</li>
                     <li>Cron jobs: {insights.cronJobsCount ?? 0}</li>
                   </ul>
                 </article>
 
                 <article style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 10, background: '#0f1730' }}>
-                  <h4 style={{ marginTop: 0 }}>📡 Presence Feed</h4>
+                  <h4 style={{ marginTop: 0 }}>🔵 Handoffs</h4>
                   <div style={{ display: 'grid', gap: 6 }}>
-                    {team.map((t, i) => {
-                      const state = i % 4 === 0 ? 'Entrenando' : i % 4 === 1 ? 'En review' : i % 4 === 2 ? 'Bloqueado' : 'Idle';
-                      const icon = i % 4 === 0 ? '🟢' : i % 4 === 1 ? '🟡' : i % 4 === 2 ? '🔴' : '⚪';
-                      const area = i % 3 === 0 ? 'Planning Gym' : i % 3 === 1 ? 'Dev Lab' : 'Content Studio';
-                      return <div key={t.id} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 8, padding: 6 }}>{icon} <b>{t.name}</b> · {state} · {area}</div>;
+                    {tasks.slice(0, 5).map((t, i) => {
+                      const from = i % 2 === 0 ? 'Planning Gym' : 'Dev Lab';
+                      const to = t.status === 'done' ? 'Publish Gate' : t.status === 'blocked' ? 'Review Room' : 'QA Arena';
+                      return <div key={t.id} style={{ fontSize: 12, border: `1px solid ${UI.border}`, borderRadius: 8, padding: 6 }}>🔵 {from} → {to} · {t.title}</div>;
                     })}
                   </div>
                 </article>
@@ -445,7 +475,7 @@ function App() {
             </div>
           </section>
         )}
-      </div>
+     </div>
     </main>
   );
 }
