@@ -7,6 +7,7 @@ import { loadStore, saveStore, id } from './store.js';
 
 const port = Number(process.env.API_PORT || 8790);
 const WS = '/data/.openclaw/workspace';
+const SKILLS_DIR = path.join(WS, 'skills');
 
 function send(res, status, payload) {
   res.writeHead(status, {
@@ -51,6 +52,57 @@ function mapSubagentsFromStatus(status) {
   }));
 }
 
+function computeGamification(tasks = []) {
+  const done = tasks.filter(t => t.status === 'done').length;
+  const inProgress = tasks.filter(t => t.status === 'in_progress').length;
+  const blocked = tasks.filter(t => t.status === 'blocked').length;
+  const todo = tasks.filter(t => t.status === 'todo').length;
+  const xp = Math.max(0, done * 40 + inProgress * 10 - blocked * 12);
+  const level = Math.max(1, Math.floor(xp / 120) + 1);
+  const streak = Math.min(45, done + 3);
+  const badges = [
+    done >= 3 ? 'Closer' : null,
+    blocked === 0 ? 'No-Block Hero' : null,
+    level >= 3 ? 'Elite Operator' : null
+  ].filter(Boolean);
+  return { done, inProgress, blocked, todo, xp, level, streak, badges };
+}
+
+function kanbanMetrics(tasks = []) {
+  const byStatus = { todo: 0, in_progress: 0, blocked: 0, done: 0 };
+  for (const t of tasks) byStatus[t.status] = (byStatus[t.status] || 0) + 1;
+  const wipLimit = 4;
+  const wipBreached = byStatus.in_progress > wipLimit;
+  return { byStatus, wipLimit, wipBreached };
+}
+
+function buildOptimizer({ tasks = [], pipeline = [] }) {
+  const g = computeGamification(tasks);
+  const k = kanbanMetrics(tasks);
+  const suggestions = [];
+  if (g.blocked > 0) suggestions.push(`Resolver ${g.blocked} bloqueos antes de agregar nuevas tareas.`);
+  if (k.wipBreached) suggestions.push(`WIP excedido (${k.byStatus.in_progress}/${k.wipLimit}). Pausar intake.`);
+  if ((pipeline.filter(p => p.stage === 'publish').length) === 0) suggestions.push('Empujar al menos 1 pieza a publish hoy para mantener throughput.');
+  if (g.todo > g.done * 2) suggestions.push('Repriorizar backlog: demasiadas tareas en todo vs done.');
+  if (!suggestions.length) suggestions.push('Flujo estable. Mantén cadencia y enfócate en calidad de entrega.');
+  return suggestions;
+}
+
+function cronFromStatus(status) {
+  const jobs = status?.cron?.jobs || status?.jobs || [];
+  return Array.isArray(jobs) ? jobs : [];
+}
+
+async function listInstalledSkills() {
+  try {
+    const names = await readdir(SKILLS_DIR);
+    const wanted = ['mission-control-dashboard', 'openclaw-dashboard', 'agent-team-orchestration', 'kanban', 'calendar', 'agent-memory', 'gamification-xp'];
+    return wanted.map((slug) => ({ slug, installed: names.includes(slug) }));
+  } catch {
+    return [];
+  }
+}
+
 async function parseBody(req) {
   const chunks = [];
   for await (const c of req) chunks.push(c);
@@ -72,15 +124,8 @@ async function memoriesSearch(q = '') {
     try {
       const raw = await readFile(f, 'utf8');
       const lines = raw.split('\n');
-      if (!term) {
-        hits.push({ file: path.basename(f), excerpt: lines.slice(0, 8).join('\n') });
-      } else {
-        lines.forEach((line, i) => {
-          if (line.toLowerCase().includes(term)) {
-            hits.push({ file: path.basename(f), line: i + 1, excerpt: line.trim() });
-          }
-        });
-      }
+      if (!term) hits.push({ file: path.basename(f), excerpt: lines.slice(0, 8).join('\n') });
+      else lines.forEach((line, i) => line.toLowerCase().includes(term) && hits.push({ file: path.basename(f), line: i + 1, excerpt: line.trim() }));
     } catch {}
   }
   return hits.slice(0, 120);
@@ -101,6 +146,23 @@ export const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/api/skills') {
+    const items = await listInstalledSkills();
+    return send(res, 200, { items });
+  }
+
+  if (url.pathname === '/api/insights') {
+    const store = await loadStore();
+    let cronJobs = [];
+    try { cronJobs = cronFromStatus(await getOpenClawStatus()); } catch {}
+    return send(res, 200, {
+      gamification: computeGamification(store.tasks),
+      kanban: kanbanMetrics(store.tasks),
+      cronJobsCount: cronJobs.length,
+      suggestions: buildOptimizer(store)
+    });
+  }
+
   if (url.pathname === '/api/bots') {
     try {
       const status = await getOpenClawStatus();
@@ -119,7 +181,6 @@ export const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Task Board
   if (url.pathname === '/api/tasks' && req.method === 'GET') {
     const store = await loadStore();
     return send(res, 200, { items: store.tasks });
@@ -143,7 +204,6 @@ export const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, item: store.tasks[i] });
   }
 
-  // Content pipeline
   if (url.pathname === '/api/pipeline' && req.method === 'GET') {
     const store = await loadStore();
     return send(res, 200, { items: store.pipeline });
@@ -151,16 +211,7 @@ export const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/pipeline' && req.method === 'POST') {
     const body = await parseBody(req);
     const store = await loadStore();
-    const row = {
-      id: id('c'),
-      stage: body.stage || 'ideas',
-      title: body.title || 'Nueva idea',
-      script: body.script || '',
-      imageUrls: Array.isArray(body.imageUrls) ? body.imageUrls : [],
-      status: body.status || 'draft',
-      assignee: body.assignee || 'Roy',
-      updatedAt: new Date().toISOString()
-    };
+    const row = { id: id('c'), stage: body.stage || 'ideas', title: body.title || 'Nueva idea', script: body.script || '', imageUrls: Array.isArray(body.imageUrls) ? body.imageUrls : [], status: body.status || 'draft', assignee: body.assignee || 'Roy', updatedAt: new Date().toISOString() };
     store.pipeline.unshift(row);
     await saveStore(store);
     return send(res, 200, { ok: true, item: row });
@@ -176,11 +227,15 @@ export const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, item: store.pipeline[i] });
   }
 
-  // Calendar
   if (url.pathname === '/api/calendar' && req.method === 'GET') {
     const store = await loadStore();
     const taskEvents = store.tasks.filter((t) => t.dueAt).map((t) => ({ id: `task-${t.id}`, title: `Task: ${t.title}`, startsAt: t.dueAt, source: 'task', status: t.status }));
-    const all = [...store.calendar, ...taskEvents].sort((a, b) => (a.startsAt > b.startsAt ? 1 : -1));
+    let cronEvents = [];
+    try {
+      const jobs = cronFromStatus(await getOpenClawStatus());
+      cronEvents = jobs.slice(0, 30).map((j, idx) => ({ id: `cron-${idx}`, title: `Cron: ${j.name || j.id || 'job'}`, startsAt: j.nextRunAt || j.nextRun || new Date().toISOString(), source: 'cron', status: j.enabled === false ? 'disabled' : 'scheduled' }));
+    } catch {}
+    const all = [...store.calendar, ...taskEvents, ...cronEvents].sort((a, b) => (a.startsAt > b.startsAt ? 1 : -1));
     return send(res, 200, { items: all });
   }
   if (url.pathname === '/api/calendar' && req.method === 'POST') {
@@ -192,14 +247,12 @@ export const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, item: row });
   }
 
-  // Memory
   if (url.pathname === '/api/memories' && req.method === 'GET') {
     const q = url.searchParams.get('q') || '';
     const items = await memoriesSearch(q);
     return send(res, 200, { items });
   }
 
-  // Team + digital office
   if (url.pathname === '/api/team' && req.method === 'GET') {
     const store = await loadStore();
     return send(res, 200, { items: store.teamRoles });

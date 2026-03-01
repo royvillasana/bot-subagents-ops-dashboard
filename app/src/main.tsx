@@ -6,6 +6,8 @@ type Pipeline = { id: string; stage: string; title: string; script: string; imag
 type Cal = { id: string; title: string; startsAt: string; source: string; status: string };
 type MemoryHit = { file: string; line?: number; excerpt: string };
 type Team = { id: string; name: string; role: string; type: string; responsibilities: string[] };
+type Insight = { gamification?: any; kanban?: any; cronJobsCount?: number; suggestions?: string[] };
+type SkillState = { slug: string; installed: boolean };
 
 type LocalStore = { tasks: Task[]; pipeline: Pipeline[]; calendar: Cal[]; team: Team[]; memories: MemoryHit[] };
 
@@ -77,6 +79,8 @@ function App() {
   const [memories, setMemories] = useState<MemoryHit[]>([]);
   const [team, setTeam] = useState<Team[]>([]);
   const [qMem, setQMem] = useState('');
+  const [insights, setInsights] = useState<Insight>({});
+  const [skills, setSkills] = useState<SkillState[]>([]);
 
   const [newTask, setNewTask] = useState({ title: '', assignee: 'Stanley', priority: 'medium', dueAt: '' });
   const [newPipe, setNewPipe] = useState({ title: '', stage: 'ideas', assignee: 'Roy' });
@@ -98,15 +102,18 @@ function App() {
   async function loadAll() {
     if (mixedContentRisk) return hydrateFromLocal('Tu página está en HTTPS y el API en HTTP (bloqueado por navegador).');
     try {
-      const [s, t, p, c, m, tm] = await Promise.all([
+      const [s, t, p, c, m, tm, ins, sk] = await Promise.all([
         apiFetch(`${apiBase}/api/openclaw/status`).then(r => r.json()),
         apiFetch(`${apiBase}/api/tasks`).then(r => r.json()),
         apiFetch(`${apiBase}/api/pipeline`).then(r => r.json()),
         apiFetch(`${apiBase}/api/calendar`).then(r => r.json()),
         apiFetch(`${apiBase}/api/memories`).then(r => r.json()),
-        apiFetch(`${apiBase}/api/team`).then(r => r.json())
+        apiFetch(`${apiBase}/api/team`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/insights`).then(r => r.json()).catch(() => ({})),
+        apiFetch(`${apiBase}/api/skills`).then(r => r.json()).catch(() => ({ items: [] }))
       ]);
       setOc(Boolean(s?.ok)); setTasks(t.items || []); setPipeline(p.items || []); setCalendar(c.items || []); setMemories(m.items || []); setTeam(tm.items || []);
+      setInsights(ins || {}); setSkills(sk.items || []);
       setSource('api'); setApiError(''); setLastSync(new Date().toLocaleTimeString());
     } catch (e: any) { hydrateFromLocal(`API no responde: ${String(e?.message || e)}`); }
   }
@@ -230,11 +237,32 @@ function App() {
             <div style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>⚡ Acciones sugeridas IA</h3>
               <ul>
-                <li>{stats.blocked ? `Resolver ${stats.blocked} bloqueos antes de crear nuevas tareas.` : 'Sin bloqueos críticos, puedes escalar throughput.'}</li>
-                <li>Reasignar tareas high priority a agente con menor carga.</li>
-                <li>Empujar 1 item de pipeline a publish para mantener flujo.</li>
-                <li>Revisar calendario + cron para evitar solapes operativos.</li>
+                {(insights.suggestions?.length ? insights.suggestions : [
+                  stats.blocked ? `Resolver ${stats.blocked} bloqueos antes de crear nuevas tareas.` : 'Sin bloqueos críticos, puedes escalar throughput.',
+                  'Reasignar tareas high priority a agente con menor carga.',
+                  'Empujar 1 item de pipeline a publish para mantener flujo.'
+                ]).map((x:string, i:number)=><li key={i}>{x}</li>)}
               </ul>
+              <p style={{ color: UI.sub, fontSize: 12 }}>Cron jobs detectados: {insights.cronJobsCount ?? 0}</p>
+            </div>
+          </section>
+        )}
+
+
+        {tab === 'command' && (
+          <section style={{ marginTop: 12, background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
+            <h3 style={{ marginTop: 0 }}>🧩 Skills integradas (ClawHub)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 }}>
+              {(skills.length ? skills : [
+                { slug: 'mission-control-dashboard', installed: false },
+                { slug: 'openclaw-dashboard', installed: false },
+                { slug: 'agent-team-orchestration', installed: false }
+              ]).map((sk:any) => (
+                <div key={sk.slug} style={{ border: `1px solid ${UI.border}`, borderRadius: 8, padding: 8, background: '#0f1730' }}>
+                  <div style={{ fontWeight: 600 }}>{sk.slug}</div>
+                  <div style={{ color: sk.installed ? UI.accent : UI.warn, fontSize: 12 }}>{sk.installed ? 'instalada' : 'pendiente'}</div>
+                </div>
+              ))}
             </div>
           </section>
         )}
