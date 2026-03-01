@@ -19,14 +19,17 @@ function App() {
   const [bots, setBots] = useState<Bot[]>([]);
   const [subs, setSubs] = useState<Subagent[]>([]);
   const [filter, setFilter] = useState<'all' | 'running' | 'queued' | 'success' | 'failed'>('all');
+  const [ocConnected, setOcConnected] = useState<boolean | null>(null);
 
   async function load() {
-    const [b, s] = await Promise.all([
+    const [b, s, oc] = await Promise.all([
       fetch(`${API_BASE}/api/bots`).then((r) => r.json()),
-      fetch(`${API_BASE}/api/subagents`).then((r) => r.json())
+      fetch(`${API_BASE}/api/subagents`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/openclaw/status`).then((r) => r.json()).catch(() => ({ ok: false }))
     ]);
     setBots(b.items || []);
     setSubs(s.items || []);
+    setOcConnected(Boolean(oc?.ok));
   }
 
   useEffect(() => {
@@ -44,6 +47,7 @@ function App() {
     <main style={{ fontFamily: 'Inter,system-ui,sans-serif', padding: 24, maxWidth: 1000, margin: '0 auto' }}>
       <h1>Bot & Subagents Ops Dashboard v2</h1>
       <p style={{ color: '#4b5563' }}>Monitoreo operativo de bots, subagentes y carga de trabajo.</p>
+      <p style={{ marginTop: 0, fontSize: 13, color: ocConnected ? '#15803d' : '#b91c1c' }}>OpenClaw: {ocConnected === null ? 'verificando...' : ocConnected ? 'conectado' : 'sin conexión'}</p>
 
       <Panel title="Bots activos">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
