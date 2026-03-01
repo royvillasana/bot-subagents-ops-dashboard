@@ -13,7 +13,7 @@ function send(res, status, payload) {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
-    'access-control-allow-headers': 'content-type'
+    'access-control-allow-headers': 'content-type, x-pinggy-no-screen'
   });
   res.end(JSON.stringify(payload));
 }
