@@ -20,6 +20,14 @@ const DEFAULT_API = (import.meta as any).env?.VITE_API_BASE || 'http://127.0.0.1
 const LS_API_KEY = 'mission_control_api_base';
 const LS_STORE_KEY = 'mission_control_local_store_v1';
 
+async function apiFetch(url: string, init: RequestInit = {}) {
+  const headers = {
+    'X-Pinggy-No-Screen': '1',
+    ...(init.headers || {})
+  } as Record<string, string>;
+  return fetch(url, { ...init, headers });
+}
+
 function seedStore(): LocalStore {
   return {
     tasks: [
@@ -139,13 +147,13 @@ function App() {
 
     try {
       const [s, t, p, c, m, tm, of] = await Promise.all([
-        fetch(`${apiBase}/api/openclaw/status`).then(r => r.json()),
-        fetch(`${apiBase}/api/tasks`).then(r => r.json()),
-        fetch(`${apiBase}/api/pipeline`).then(r => r.json()),
-        fetch(`${apiBase}/api/calendar`).then(r => r.json()),
-        fetch(`${apiBase}/api/memories`).then(r => r.json()),
-        fetch(`${apiBase}/api/team`).then(r => r.json()),
-        fetch(`${apiBase}/api/office`).then(r => r.json())
+        apiFetch(`${apiBase}/api/openclaw/status`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/tasks`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/pipeline`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/calendar`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/memories`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/team`).then(r => r.json()),
+        apiFetch(`${apiBase}/api/office`).then(r => r.json())
       ]);
       setOc(Boolean(s?.ok));
       setTasks(t.items || []);
@@ -178,7 +186,7 @@ function App() {
   async function createTask() {
     if (source === 'api') {
       try {
-        await fetch(`${apiBase}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newTask, dueAt: newTask.dueAt || null }) });
+        await apiFetch(`${apiBase}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newTask, dueAt: newTask.dueAt || null }) });
       } catch {}
       await loadAll();
       return;
@@ -192,7 +200,7 @@ function App() {
 
   async function patchTask(id: string, patch: Partial<Task>) {
     if (source === 'api') {
-      try { await fetch(`${apiBase}/api/tasks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }); } catch {}
+      try { await apiFetch(`${apiBase}/api/tasks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }); } catch {}
       await loadAll();
       return;
     }
@@ -203,7 +211,7 @@ function App() {
 
   async function createPipeline() {
     if (source === 'api') {
-      try { await fetch(`${apiBase}/api/pipeline`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(newPipe) }); } catch {}
+      try { await apiFetch(`${apiBase}/api/pipeline`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(newPipe) }); } catch {}
       await loadAll();
       return;
     }
@@ -216,7 +224,7 @@ function App() {
 
   async function patchPipeline(id: string, patch: Partial<Pipeline>) {
     if (source === 'api') {
-      try { await fetch(`${apiBase}/api/pipeline/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }); } catch {}
+      try { await apiFetch(`${apiBase}/api/pipeline/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }); } catch {}
       await loadAll();
       return;
     }
@@ -227,7 +235,7 @@ function App() {
 
   async function createEvent() {
     if (source === 'api') {
-      try { await fetch(`${apiBase}/api/calendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newEvent, source: 'manual' }) }); } catch {}
+      try { await apiFetch(`${apiBase}/api/calendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newEvent, source: 'manual' }) }); } catch {}
       await loadAll();
       return;
     }
@@ -240,7 +248,7 @@ function App() {
 
   async function searchMem() {
     if (source === 'api') {
-      const d = await fetch(`${apiBase}/api/memories?q=${encodeURIComponent(qMem)}`).then(r => r.json()).catch(() => ({ items: [] }));
+      const d = await apiFetch(`${apiBase}/api/memories?q=${encodeURIComponent(qMem)}`).then(r => r.json()).catch(() => ({ items: [] }));
       setMemories(d.items || []);
       return;
     }
