@@ -1,11 +1,14 @@
 {
   "name": "bot-subagents-ops-dashboard",
   "private": true,
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
+  "workspaces": ["app", "backend"],
   "scripts": {
-    "dev:backend": "node backend/src/index.js",
-    "dev:web": "npm --workspace app run dev"
-  },
-  "workspaces": ["app"]
+    "install:all": "npm install --workspaces",
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:web": "npm --workspace app run dev",
+    "build": "npm --workspace app run build",
+    "test": "npm --workspace backend run test"
+  }
 }
