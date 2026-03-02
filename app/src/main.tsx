@@ -418,27 +418,38 @@ function App() {
 
         {tab === 'office' && (
           <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
-            <h3 style={{ marginTop: 0 }}>🕹️ Virtual Office v8 (Pokémon Cast)</h3>
-            <p style={{ color: UI.sub }}>Roy = Ash Ketchum · Stanley = Charmander · bots = sprites Pokémon.</p>
+            <h3 style={{ marginTop: 0 }}>🕹️ Virtual Office (Embedded AIOffice)</h3>
+            <p style={{ color: UI.sub }}>Embebida: <code>https://essentially-greater-hiv-pittsburgh.trycloudflare.com/</code></p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12 }}>
-              <div style={{ border: `1px solid ${UI.border}`, borderRadius: 12, padding: 8, background: '#081027' }}>
-                <div style={{ position: 'relative', height: 430, borderRadius: 10, overflow: 'hidden', border: `1px solid ${UI.border}`, background: 'repeating-linear-gradient(0deg,#0f1a3a 0px,#0f1a3a 16px,#132248 16px,#132248 32px), repeating-linear-gradient(90deg,#0f1a3a 0px,#0f1a3a 16px,#132248 16px,#132248 32px)' }}>
-                  {[{ key:'planning', name:'Planning Gym', x:14, y:16, w:180, h:110, c:'#1b4a7a' },{ key:'dev', name:'Dev Lab', x:220, y:16, w:190, h:110, c:'#24503a' },{ key:'content', name:'Content Studio', x:430, y:16, w:180, h:110, c:'#5a2f2f' },{ key:'qa', name:'QA Arena', x:14, y:150, w:180, h:110, c:'#3f3b70' },{ key:'review', name:'Review Room', x:220, y:150, w:190, h:110, c:'#5a4a1e' },{ key:'publish', name:'Publish Gate', x:430, y:150, w:180, h:110, c:'#1f5a52' }].map(z => (
-                    <div key={z.key} style={{ position:'absolute', left:z.x, top:z.y, width:z.w, height:z.h, border:'2px solid #9fb3d9', borderRadius:8, background:`${z.c}cc` }}><div style={{ fontSize:12, fontWeight:700, padding:'4px 6px', color:'#eef4ff' }}>{z.name}</div></div>
-                  ))}
-                  {roster.map((r, i) => {
-                    const pos = [{x:40,y:72, zone:'Planning Gym'},{x:270,y:72, zone:'Dev Lab'},{x:470,y:72, zone:'Content Studio'},{x:40,y:205, zone:'QA Arena'},{x:280,y:205, zone:'Review Room'},{x:480,y:205, zone:'Publish Gate'}][i % 6];
-                    const spriteUrl = r.name.toLowerCase() === 'roy' ? 'https://play.pokemonshowdown.com/sprites/trainers/ash.png' : (r.name.toLowerCase() === 'stanley' ? 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png' : `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${(i % 10) + 1}.png`);
-                    const mode = String(r.status||'').includes('run') ? 'running' : String(r.status||'').includes('queue') ? 'review' : String(r.status||'').includes('idle') ? 'idle' : (i % 4 === 2 ? 'blocked' : 'running');
-                    const dot = mode === 'running' ? '#22c55e' : mode === 'review' ? '#facc15' : mode === 'blocked' ? '#ef4444' : '#d1d5db';
-                    return <div key={r.id || r.name} title={`${r.name} · ${mode} · ${pos.zone}`} style={{ position:'absolute', left:pos.x, top:pos.y, width:86, textAlign:'center' }}><div style={{ position:'relative', display:'inline-block' }}><img src={spriteUrl} alt={r.name} style={{ width:52, height:52, imageRendering:'pixelated', border:'2px solid #93c5fd', borderRadius:6, background:'#0b1220' }} /><span style={{ position:'absolute', right:-4, top:-4, width:10, height:10, borderRadius:999, background:dot, border:'1px solid #0b1220' }} /></div><div style={{ fontSize:11, marginTop:2, color:'#e5edff' }}>{r.name}</div></div>;
-                  })}
-                </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 12 }}>
+              <div style={{ border: `1px solid ${UI.border}`, borderRadius: 12, overflow: 'hidden', background: '#0b1220' }}>
+                <iframe
+                  title="AIOffice"
+                  src="https://essentially-greater-hiv-pittsburgh.trycloudflare.com/"
+                  style={{ width: '100%', height: 560, border: '0' }}
+                  referrerPolicy="no-referrer"
+                />
               </div>
-              <div style={{ display:'grid', gap:10 }}>
-                <article style={{ border:`1px solid ${UI.border}`, borderRadius:12, padding:10, background:'#0f1730' }}><h4 style={{ marginTop:0 }}>👥 Roster en mapa</h4><ul style={{ margin:0, paddingLeft:18 }}>{roster.map((r, i) => <li key={r.id || i}><b>{r.name}</b> — {r.role || 'Bot'} {r.name.toLowerCase()==='roy' ? '(Ash)' : r.name.toLowerCase()==='stanley' ? '(Charmander)' : ''}</li>)}</ul></article>
-                <article style={{ border:`1px solid ${UI.border}`, borderRadius:12, padding:10, background:'#0f1730' }}><h4 style={{ marginTop:0 }}>⚠️ Alertas</h4><ul style={{ margin:0, paddingLeft:18 }}><li>Bots detectados: {botsLive.length}</li><li>Bloqueadas: {tasks.filter(t => t.status === 'blocked').length}</li><li>WIP: {tasks.filter(t => t.status === 'in_progress').length}</li></ul></article>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                <article style={{ border:`1px solid ${UI.border}`, borderRadius:12, padding:10, background:'#0f1730' }}>
+                  <h4 style={{ marginTop:0 }}>👥 Cast Pokémon</h4>
+                  <ul style={{ margin:0, paddingLeft:18 }}>
+                    <li><b>Roy</b> — Ash Ketchum</li>
+                    <li><b>Stanley</b> — Charmander</li>
+                    {roster.filter(r => !['roy','stanley'].includes(String(r.name).toLowerCase())).map((r, i) => (
+                      <li key={r.id || i}><b>{r.name}</b> — Pokémon #{(i % 10) + 1}</li>
+                    ))}
+                  </ul>
+                </article>
+
+                <article style={{ border:`1px solid ${UI.border}`, borderRadius:12, padding:10, background:'#0f1730' }}>
+                  <h4 style={{ marginTop:0 }}>⚠️ Nota</h4>
+                  <p style={{ margin:0, color:UI.sub, fontSize:12 }}>
+                    Si el iframe no carga por políticas del navegador/túnel, abre la oficina en pestaña nueva y la seguimos integrando.
+                  </p>
+                  <a href="https://essentially-greater-hiv-pittsburgh.trycloudflare.com/" target="_blank" rel="noreferrer" style={{ color:'#93c5fd', fontSize:12 }}>Abrir AIOffice en nueva pestaña</a>
+                </article>
               </div>
             </div>
           </section>
