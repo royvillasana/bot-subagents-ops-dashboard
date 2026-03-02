@@ -404,6 +404,58 @@ function App() {
           </section>
         )}
 
+        {tab === 'shorts-intel' && (
+          <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
+            <h3 style={{ marginTop: 0 }}>📈 Shorts Market Intel</h3>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+              <select style={input} value={selectedNicheId} onChange={e => setSelectedNicheId(e.target.value)}>
+                {(shortsIntel.niches || []).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+              </select>
+              <select style={input} value={selectedChannelId} onChange={e => setSelectedChannelId(e.target.value)}>
+                {visibleChannels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button style={pill(true)} onClick={ingestShortsIntel}>{intelRefreshing ? 'Ingestando...' : 'Mock ingest refresh'}</button>
+              <span style={{ color: UI.sub, fontSize: 12 }}>Niches: {shortsIntel.totals?.niches || 0} · Channels: {shortsIntel.totals?.channels || 0} · Videos: {shortsIntel.totals?.videos || 0}</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10, marginBottom: 10 }}>
+              {(shortsIntel.ranking || []).slice(0, 3).map((r:any, idx:number) => (
+                <article key={r.niche?.id || idx} style={{ border: `1px solid ${UI.border}`, borderRadius: 10, padding: 10, background: '#0f1730' }}>
+                  <div style={{ color: UI.sub, fontSize: 12 }}>#{idx + 1} Niche Momentum</div>
+                  <b>{r.niche?.name}</b>
+                  <div style={{ marginTop: 6, fontSize: 13 }}>Score: {r.niche?.momentumScore} · Avg views: {Number(r.avgViews || 0).toLocaleString()}</div>
+                  <div style={{ color: UI.sub, fontSize: 12, marginTop: 4 }}>Top channel: {r.topChannel?.name || '-'}</div>
+                </article>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 10 }}>
+              <article style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}>
+                <h4 style={{ marginTop:0 }}>Top channels por nicho</h4>
+                <table style={{ width:'100%', fontSize:12 }}>
+                  <thead><tr><th style={{textAlign:'left'}}>Channel</th><th>Niche</th><th>Subs</th><th>Avg views</th><th>Velocity</th><th>Win rate</th></tr></thead>
+                  <tbody>
+                    {visibleChannels.slice(0, 8).map(c => {
+                      const niche = shortsIntel.niches.find(n => n.id === c.nicheId);
+                      return <tr key={c.id}><td>{c.name}<div style={{color:UI.sub}}>{c.handle}</div></td><td>{niche?.name || c.nicheId}</td><td style={{textAlign:'right'}}>{Number(c.subscribers).toLocaleString()}</td><td style={{textAlign:'right'}}>{Number(c.avgViews).toLocaleString()}</td><td style={{textAlign:'right'}}>{c.velocityScore}</td><td style={{textAlign:'right'}}>{Math.round(c.winRate * 100)}%</td></tr>;
+                    })}
+                  </tbody>
+                </table>
+              </article>
+
+              <article style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}>
+                <h4 style={{ marginTop:0 }}>Últimos 20 videos analizados</h4>
+                <table style={{ width:'100%', fontSize:12 }}>
+                  <thead><tr><th style={{textAlign:'left'}}>Video</th><th>Views</th><th>Duración</th><th>Hook</th><th>Pattern</th><th>CTA</th><th>Why it worked</th></tr></thead>
+                  <tbody>
+                    {visibleVideos.map(v => <tr key={v.id}><td>{new Date(v.publishedAt).toLocaleDateString()}<div>{v.title}</div></td><td style={{textAlign:'right'}}>{Number(v.views).toLocaleString()}</td><td style={{textAlign:'right'}}>{v.durationSec}s</td><td>{v.hook}</td><td>{v.pattern}</td><td>{v.callToAction}</td><td>{v.inferredWhyItWorked}</td></tr>)}
+                  </tbody>
+                </table>
+              </article>
+            </div>
+          </section>
+        )}
+
         {tab === 'tasks' && (
           <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
             <h3 style={{ marginTop: 0 }}>🧭 Quest Board (Kanban)</h3>

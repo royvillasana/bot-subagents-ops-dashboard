@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { generateMockShortsIntel } from './shorts-intel.js';
 
 const STORE_PATH = path.join(process.cwd(), 'backend', 'data', 'store.json');
 
@@ -20,7 +21,8 @@ const seed = {
     { id: 'agent-dev', name: 'DevAgent', role: 'Developer', type: 'subagent', responsibilities: ['Frontend', 'Backend', 'Integraciones'] },
     { id: 'agent-writer', name: 'WriterAgent', role: 'Writer', type: 'subagent', responsibilities: ['Guiones', 'Copy', 'Documentación'] },
     { id: 'agent-designer', name: 'DesignAgent', role: 'Designer', type: 'subagent', responsibilities: ['Layouts', 'UX Flows', 'Visual polish'] }
-  ]
+  ],
+  shortsIntel: generateMockShortsIntel()
 };
 
 async function ensureStore() {
