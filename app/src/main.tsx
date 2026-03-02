@@ -8,6 +8,7 @@ type MemoryHit = { file: string; line?: number; excerpt: string };
 type Team = { id: string; name: string; role: string; type: string; responsibilities: string[] };
 type Insight = { gamification?: any; kanban?: any; cronJobsCount?: number; suggestions?: string[] };
 type SkillState = { slug: string; installed: boolean };
+type CostData = { day?: string; currency?: string; estimated?: boolean; note?: string; totals?: any; byModel?: any[]; connectedApis?: any[] };
 
 type LocalStore = { tasks: Task[]; pipeline: Pipeline[]; calendar: Cal[]; team: Team[]; memories: MemoryHit[] };
 
@@ -81,6 +82,7 @@ function App() {
   const [qMem, setQMem] = useState('');
   const [insights, setInsights] = useState<Insight>({});
   const [skills, setSkills] = useState<SkillState[]>([]);
+  const [costs, setCosts] = useState<CostData>({});
 
   const [newTask, setNewTask] = useState({ title: '', assignee: 'Stanley', priority: 'medium', dueAt: '' });
   const [newPipe, setNewPipe] = useState({ title: '', stage: 'ideas', assignee: 'Roy' });
@@ -102,7 +104,7 @@ function App() {
   async function loadAll() {
     if (mixedContentRisk) return hydrateFromLocal('Tu página está en HTTPS y el API en HTTP (bloqueado por navegador).');
     try {
-      const [s, t, p, c, m, tm, ins, sk] = await Promise.all([
+      const [s, t, p, c, m, tm, ins, sk, co] = await Promise.all([
         apiFetch(`${apiBase}/api/openclaw/status`).then(r => r.json()),
         apiFetch(`${apiBase}/api/tasks`).then(r => r.json()),
         apiFetch(`${apiBase}/api/pipeline`).then(r => r.json()),
@@ -110,10 +112,11 @@ function App() {
         apiFetch(`${apiBase}/api/memories`).then(r => r.json()),
         apiFetch(`${apiBase}/api/team`).then(r => r.json()),
         apiFetch(`${apiBase}/api/insights`).then(r => r.json()).catch(() => ({})),
-        apiFetch(`${apiBase}/api/skills`).then(r => r.json()).catch(() => ({ items: [] }))
+        apiFetch(`${apiBase}/api/skills`).then(r => r.json()).catch(() => ({ items: [] })),
+        apiFetch(`${apiBase}/api/costs`).then(r => r.json()).catch(() => ({}))
       ]);
       setOc(Boolean(s?.ok)); setTasks(t.items || []); setPipeline(p.items || []); setCalendar(c.items || []); setMemories(m.items || []); setTeam(tm.items || []);
-      setInsights(ins || {}); setSkills(sk.items || []);
+      setInsights(ins || {}); setSkills(sk.items || []); setCosts(co || {});
       setSource('api'); setApiError(''); setLastSync(new Date().toLocaleTimeString());
     } catch (e: any) { hydrateFromLocal(`API no responde: ${String(e?.message || e)}`); }
   }
@@ -193,7 +196,7 @@ function App() {
   }), [tasks]);
 
   const tabs = [
-    ['command', '🎮 Command'], ['tasks', '🧭 Quests'], ['pipeline', '🧪 Pipeline'], ['calendar', '🗓 Calendar'], ['memory', '📚 Memory'], ['team', '🧑‍🚀 Team'], ['office', '🗺 Office']
+    ['command', '🎮 Command'], ['costs', '💸 Costs'], ['tasks', '🧭 Quests'], ['pipeline', '🧪 Pipeline'], ['calendar', '🗓 Calendar'], ['memory', '📚 Memory'], ['team', '🧑‍🚀 Team'], ['office', '🗺 Office']
   ];
 
   return (
@@ -263,6 +266,36 @@ function App() {
                   <div style={{ color: sk.installed ? UI.accent : UI.warn, fontSize: 12 }}>{sk.installed ? 'instalada' : 'pendiente'}</div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+
+        {tab === 'costs' && (
+          <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
+            <h3 style={{ marginTop: 0 }}>💸 Costos y consumo diario</h3>
+            <p style={{ color: UI.sub, marginTop: 0 }}>Día: {costs.day || '-'} · {costs.estimated ? 'estimado' : 'exacto'} · moneda: {costs.currency || 'USD'}</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, marginBottom: 10 }}>
+              <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Input tokens</div><b>{Number(costs.totals?.input||0).toLocaleString()}</b></div>
+              <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Output tokens</div><b>{Number(costs.totals?.output||0).toLocaleString()}</b></div>
+              <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Cache read</div><b>{Number(costs.totals?.cacheRead||0).toLocaleString()}</b></div>
+              <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Gasto estimado</div><b>${Number(costs.totals?.estUsd||0).toFixed(4)}</b></div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <article style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}>
+                <h4 style={{ marginTop:0 }}>Por modelo/API</h4>
+                <table style={{ width:'100%', fontSize:12 }}><thead><tr><th style={{textAlign:'left'}}>Modelo</th><th>Input</th><th>Output</th><th>USD est.</th></tr></thead><tbody>
+                {(costs.byModel||[]).map((r:any)=><tr key={r.model}><td>{r.model}</td><td style={{textAlign:'right'}}>{Number(r.input||0).toLocaleString()}</td><td style={{textAlign:'right'}}>{Number(r.output||0).toLocaleString()}</td><td style={{textAlign:'right'}}>${Number(r.estUsd||0).toFixed(4)}</td></tr>)}
+                </tbody></table>
+              </article>
+              <article style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}>
+                <h4 style={{ marginTop:0 }}>Servicios conectados</h4>
+                <ul>
+                  {(costs.connectedApis||[]).map((a:any, i:number)=><li key={i}><b>{a.name}</b> — {a.connected ? 'conectado' : 'no'} {a.spendUsd!=null ? `· $${Number(a.spendUsd).toFixed(4)}` : '· gasto n/a'}</li>)}
+                </ul>
+                <p style={{ color:UI.sub, fontSize:12 }}>{costs.note || ''}</p>
+              </article>
             </div>
           </section>
         )}

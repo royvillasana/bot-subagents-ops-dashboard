@@ -9,6 +9,52 @@ const port = Number(process.env.API_PORT || 8790);
 const WS = '/data/.openclaw/workspace';
 const SKILLS_DIR = path.join(WS, 'skills');
 
+const MODEL_PRICING_PER_1M = {
+  'gpt-5.3-codex': { input: 1.5, output: 6.0, cacheRead: 0.15 },
+  'default': { input: 2.0, output: 8.0, cacheRead: 0.2 }
+};
+
+function parisDayKey(ms) {
+  return new Date(Number(ms || Date.now())).toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+}
+
+function buildCosts(status) {
+  const recent = status?.sessions?.recent || [];
+  const today = parisDayKey(Date.now());
+  const rows = recent.filter(r => parisDayKey(r.updatedAt) === today);
+  const totals = { input: 0, output: 0, cacheRead: 0, sessions: 0, estUsd: 0 };
+  const byModel = {};
+  for (const r of rows) {
+    const model = r.model || 'unknown';
+    const input = Number(r.inputTokens || 0);
+    const output = Number(r.outputTokens || 0);
+    const cacheRead = Number(r.cacheRead || 0);
+    const p = MODEL_PRICING_PER_1M[model] || MODEL_PRICING_PER_1M.default;
+    const estUsd = (input/1_000_000)*p.input + (output/1_000_000)*p.output + (cacheRead/1_000_000)*p.cacheRead;
+    if (!byModel[model]) byModel[model] = { model, input: 0, output: 0, cacheRead: 0, sessions: 0, estUsd: 0 };
+    byModel[model].input += input;
+    byModel[model].output += output;
+    byModel[model].cacheRead += cacheRead;
+    byModel[model].sessions += 1;
+    byModel[model].estUsd += estUsd;
+    totals.input += input; totals.output += output; totals.cacheRead += cacheRead; totals.sessions += 1; totals.estUsd += estUsd;
+  }
+  return {
+    day: today,
+    currency: 'USD',
+    estimated: true,
+    note: 'Costos estimados con tarifa por modelo; conecta billing API para cifras exactas.',
+    totals,
+    byModel: Object.values(byModel).sort((a,b)=>b.estUsd-a.estUsd),
+    connectedApis: [
+      { name: 'OpenClaw/Gateway', connected: true, spendUsd: totals.estUsd },
+      { name: 'WhatsApp (linked channel)', connected: true, spendUsd: null },
+      { name: 'Telegram bot', connected: true, spendUsd: null }
+    ]
+  };
+}
+
+
 function send(res, status, payload) {
   res.writeHead(status, {
     'content-type': 'application/json',
@@ -145,6 +191,16 @@ export const server = http.createServer(async (req, res) => {
       return send(res, 500, { ok: false, connected: false, now: Date.now(), error: String(error?.message || error) });
     }
   }
+
+  if (url.pathname === '/api/costs') {
+    try {
+      const status = await getOpenClawStatus();
+      return send(res, 200, buildCosts(status));
+    } catch (error) {
+      return send(res, 500, { ok: false, error: String(error?.message || error) });
+    }
+  }
+
 
   if (url.pathname === '/api/skills') {
     const items = await listInstalledSkills();
