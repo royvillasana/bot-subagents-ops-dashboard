@@ -9,7 +9,10 @@ type Team = { id: string; name: string; role: string; type: string; responsibili
 type Insight = { gamification?: any; kanban?: any; cronJobsCount?: number; suggestions?: string[] };
 type SkillState = { slug: string; installed: boolean };
 type BotState = { id: string; name: string; status?: string; updatedAt?: string };
-type CostData = { day?: string; currency?: string; estimated?: boolean; note?: string; totals?: any; byModel?: any[]; connectedApis?: any[] };
+type CostData = { day?: string; currency?: string; estimated?: boolean; note?: string; totals?: any; byModel?: any[]; connectedApis?: any[]; lastUpdatedAt?: string; dataSource?: string; codex?: any };
+type IntelNiche = { id: string; name: string; audience: string; momentumScore: number };
+type IntelChannel = { id: string; nicheId: string; name: string; handle: string; subscribers: number; avgViews: number; velocityScore: number; winRate: number };
+type IntelVideo = { id: string; channelId: string; title: string; publishedAt: string; hook: string; pattern: string; callToAction: string; views: number; durationSec: number; inferredWhyItWorked: string };
 
 type LocalStore = { tasks: Task[]; pipeline: Pipeline[]; calendar: Cal[]; team: Team[]; memories: MemoryHit[] };
 
@@ -84,7 +87,13 @@ function App() {
   const [insights, setInsights] = useState<Insight>({});
   const [skills, setSkills] = useState<SkillState[]>([]);
   const [costs, setCosts] = useState<CostData>({});
+  const [costsRefreshing, setCostsRefreshing] = useState(false);
+  const [costsLastRefresh, setCostsLastRefresh] = useState('-');
   const [botsLive, setBotsLive] = useState<BotState[]>([]);
+  const [shortsIntel, setShortsIntel] = useState<{ niches: IntelNiche[]; channels: IntelChannel[]; videos: IntelVideo[]; ranking: any[]; totals?: any; generatedAt?: string }>({ niches: [], channels: [], videos: [], ranking: [] });
+  const [selectedNicheId, setSelectedNicheId] = useState('');
+  const [selectedChannelId, setSelectedChannelId] = useState('');
+  const [intelRefreshing, setIntelRefreshing] = useState(false);
 
   const [newTask, setNewTask] = useState({ title: '', assignee: 'Stanley', priority: 'medium', dueAt: '' });
   const [newPipe, setNewPipe] = useState({ title: '', stage: 'ideas', assignee: 'Roy' });
@@ -103,10 +112,56 @@ function App() {
     setSource('local'); setOc(false); setLastSync(new Date().toLocaleTimeString()); if (msg) setApiError(msg);
   }
 
+  async function loadCosts(options?: { silent?: boolean }) {
+    const silent = Boolean(options?.silent);
+    if (!silent) setCostsRefreshing(true);
+    try {
+      const co = await apiFetch(`${apiBase}/api/costs`).then(r => r.json());
+      setCosts(co || {});
+      setCostsLastRefresh(new Date().toLocaleTimeString());
+      return co;
+    } catch {
+      return null;
+    } finally {
+      if (!silent) setCostsRefreshing(false);
+    }
+  }
+
+  async function loadShortsIntel(options?: { silent?: boolean }) {
+    const silent = Boolean(options?.silent);
+    if (!silent) setIntelRefreshing(true);
+    try {
+      const d = await apiFetch(`${apiBase}/api/shorts-intel`).then(r => r.json());
+      setShortsIntel({
+        niches: d.niches || [],
+        channels: d.channels || [],
+        videos: d.videos || [],
+        ranking: d.ranking || [],
+        totals: d.totals,
+        generatedAt: d.generatedAt
+      });
+      return d;
+    } catch {
+      return null;
+    } finally {
+      if (!silent) setIntelRefreshing(false);
+    }
+  }
+
+  async function ingestShortsIntel() {
+    setIntelRefreshing(true);
+    try {
+      await apiFetch(`${apiBase}/api/shorts-intel/ingest`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nicheIds: selectedNicheId ? [selectedNicheId] : undefined }) });
+      await loadShortsIntel({ silent: true });
+    } finally {
+      setIntelRefreshing(false);
+    }
+  }
+
   async function loadAll() {
     if (mixedContentRisk) return hydrateFromLocal('Tu página está en HTTPS y el API en HTTP (bloqueado por navegador).');
     try {
-      const [s, t, p, c, m, tm, ins, sk, co, bl] = await Promise.all([
+      const [s, t, p, c, m, tm, ins, sk, bl] = await Promise.all([
         apiFetch(`${apiBase}/api/openclaw/status`).then(r => r.json()),
         apiFetch(`${apiBase}/api/tasks`).then(r => r.json()),
         apiFetch(`${apiBase}/api/pipeline`).then(r => r.json()),
@@ -115,16 +170,27 @@ function App() {
         apiFetch(`${apiBase}/api/team`).then(r => r.json()),
         apiFetch(`${apiBase}/api/insights`).then(r => r.json()).catch(() => ({})),
         apiFetch(`${apiBase}/api/skills`).then(r => r.json()).catch(() => ({ items: [] })),
-        apiFetch(`${apiBase}/api/costs`).then(r => r.json()).catch(() => ({})),
         apiFetch(`${apiBase}/api/bots`).then(r => r.json()).catch(() => ({ items: [] }))
       ]);
       setOc(Boolean(s?.ok)); setTasks(t.items || []); setPipeline(p.items || []); setCalendar(c.items || []); setMemories(m.items || []); setTeam(tm.items || []);
-      setInsights(ins || {}); setSkills(sk.items || []); setCosts(co || {}); setBotsLive((bl as any)?.items || []);
+      setInsights(ins || {}); setSkills(sk.items || []); setBotsLive((bl as any)?.items || []);
+      await Promise.all([loadCosts({ silent: true }), loadShortsIntel({ silent: true })]);
       setSource('api'); setApiError(''); setLastSync(new Date().toLocaleTimeString());
     } catch (e: any) { hydrateFromLocal(`API no responde: ${String(e?.message || e)}`); }
   }
 
   useEffect(() => { loadAll(); const i = setInterval(loadAll, 6000); return () => clearInterval(i); }, [apiBase]);
+
+  useEffect(() => {
+    if (!selectedNicheId && shortsIntel.niches[0]) setSelectedNicheId(shortsIntel.niches[0].id);
+  }, [shortsIntel.niches, selectedNicheId]);
+
+  useEffect(() => {
+    const channels = selectedNicheId ? shortsIntel.channels.filter((c) => c.nicheId === selectedNicheId) : shortsIntel.channels;
+    if (channels.length && !channels.find((c) => c.id === selectedChannelId)) {
+      setSelectedChannelId(channels[0].id);
+    }
+  }, [shortsIntel.channels, selectedNicheId, selectedChannelId]);
 
   async function createTask() {
     if (source === 'api') {
@@ -205,9 +271,28 @@ function App() {
     return base.filter((x) => { const k = String(x.name).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   }, [botsLive]);
 
+  const visibleChannels = useMemo(() => {
+    const list = shortsIntel.channels || [];
+    const filtered = selectedNicheId ? list.filter((c) => c.nicheId === selectedNicheId) : list;
+    return filtered.slice().sort((a, b) => Number(b.avgViews || 0) - Number(a.avgViews || 0));
+  }, [shortsIntel.channels, selectedNicheId]);
+
+  const visibleVideos = useMemo(() => {
+    const list = shortsIntel.videos || [];
+    const filteredByNiche = selectedNicheId ? list.filter((v) => {
+      const ch = shortsIntel.channels.find((c) => c.id === v.channelId);
+      return ch?.nicheId === selectedNicheId;
+    }) : list;
+    const filtered = selectedChannelId ? filteredByNiche.filter((v) => v.channelId === selectedChannelId) : filteredByNiche;
+    return filtered.slice().sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1)).slice(0, 20);
+  }, [shortsIntel.videos, shortsIntel.channels, selectedNicheId, selectedChannelId]);
+
   const tabs = [
-    ['command', '🎮 Command'], ['costs', '💸 Costs'], ['tasks', '🧭 Quests'], ['pipeline', '🧪 Pipeline'], ['calendar', '🗓 Calendar'], ['memory', '📚 Memory'], ['team', '🧑‍🚀 Team'], ['office', '🗺 Office']
+    ['command', '🎮 Command'], ['costs', '💸 Costs'], ['shorts-intel', '📈 Shorts Market Intel'], ['tasks', '🧭 Quests'], ['pipeline', '🧪 Pipeline'], ['calendar', '🗓 Calendar'], ['memory', '📚 Memory'], ['team', '🧑‍🚀 Team'], ['office', '🗺 Office']
   ];
+
+  const costsAgeMs = costs.lastUpdatedAt ? Math.max(0, Date.now() - new Date(costs.lastUpdatedAt).getTime()) : null;
+  const costsFreshness = costsAgeMs == null ? 'sin datos' : costsAgeMs < 60_000 ? 'al día' : costsAgeMs < 5 * 60_000 ? 'reciente' : 'desactualizado';
 
   return (
     <main style={{ fontFamily: 'Inter,system-ui,sans-serif', background: `linear-gradient(180deg, ${UI.bg}, #0d1530)`, minHeight: '100vh', color: UI.text, padding: 20 }}>
@@ -283,13 +368,22 @@ function App() {
 
         {tab === 'costs' && (
           <section style={{ background: UI.card, border: `1px solid ${UI.border}`, borderRadius: 12, padding: 12 }}>
-            <h3 style={{ marginTop: 0 }}>💸 Costos y consumo diario</h3>
-            <p style={{ color: UI.sub, marginTop: 0 }}>Día: {costs.day || '-'} · {costs.estimated ? 'estimado' : 'exacto'} · moneda: {costs.currency || 'USD'}</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>💸 Costos y consumo diario</h3>
+              <button style={pill()} onClick={() => loadCosts()} disabled={costsRefreshing}>{costsRefreshing ? 'Actualizando…' : 'Refrescar ahora'}</button>
+            </div>
+            <p style={{ color: UI.sub, marginTop: 8 }}>
+              Día: {costs.day || '-'} · {costs.estimated ? 'estimado' : 'exacto'} · moneda: {costs.currency || 'USD'} · fuente: {costs.dataSource || 'n/a'}
+            </p>
+            <p style={{ color: UI.sub, marginTop: -4, fontSize: 12 }}>
+              Auto-refresh: cada 6s · estado: {costsFreshness} · updated: {costs.lastUpdatedAt ? new Date(costs.lastUpdatedAt).toLocaleString() : '-'} · último fetch UI: {costsLastRefresh}
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 10, marginBottom: 10 }}>
               <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Input tokens</div><b>{Number(costs.totals?.input||0).toLocaleString()}</b></div>
               <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Output tokens</div><b>{Number(costs.totals?.output||0).toLocaleString()}</b></div>
               <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Cache read</div><b>{Number(costs.totals?.cacheRead||0).toLocaleString()}</b></div>
               <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#0f1730' }}><div style={{color:UI.sub,fontSize:12}}>Gasto estimado</div><b>${Number(costs.totals?.estUsd||0).toFixed(4)}</b></div>
+              <div style={{ border:`1px solid ${UI.border}`, borderRadius:10, padding:10, background:'#16223f' }}><div style={{color:UI.sub,fontSize:12}}>Codex spend</div><b>${Number(costs.codex?.estUsd||0).toFixed(4)}</b><div style={{color:UI.sub,fontSize:11}}>{costs.codex?.model || 'gpt-5.3-codex'}</div></div>
             </div>
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>

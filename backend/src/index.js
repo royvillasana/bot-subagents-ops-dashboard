@@ -4,6 +4,7 @@ import path from 'node:path';
 import { bots as mockBots, subagents as mockSubagents } from './data.js';
 import { getOpenClawStatus } from './openclaw.js';
 import { loadStore, saveStore, id } from './store.js';
+import { generateMockShortsIntel } from './shorts-intel.js';
 
 const port = Number(process.env.API_PORT || 8790);
 const WS = '/data/.openclaw/workspace';
@@ -18,36 +19,52 @@ function parisDayKey(ms) {
   return new Date(Number(ms || Date.now())).toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
 }
 
-function buildCosts(status) {
+function buildCosts(status, dataSource = 'openclaw') {
   const recent = status?.sessions?.recent || [];
   const today = parisDayKey(Date.now());
-  const rows = recent.filter(r => parisDayKey(r.updatedAt) === today);
+  const rows = recent.filter(r => parisDayKey(r.updatedAt || r.lastUpdatedAt || 0) === today);
   const totals = { input: 0, output: 0, cacheRead: 0, sessions: 0, estUsd: 0 };
   const byModel = {};
+  let lastUpdatedAt = 0;
+
   for (const r of rows) {
     const model = r.model || 'unknown';
     const input = Number(r.inputTokens || 0);
     const output = Number(r.outputTokens || 0);
     const cacheRead = Number(r.cacheRead || 0);
+    const rowUpdatedAt = Number(r.updatedAt || r.lastUpdatedAt || 0);
+    if (rowUpdatedAt > lastUpdatedAt) lastUpdatedAt = rowUpdatedAt;
+
     const p = MODEL_PRICING_PER_1M[model] || MODEL_PRICING_PER_1M.default;
-    const estUsd = (input/1_000_000)*p.input + (output/1_000_000)*p.output + (cacheRead/1_000_000)*p.cacheRead;
+    const estUsd = (input / 1_000_000) * p.input + (output / 1_000_000) * p.output + (cacheRead / 1_000_000) * p.cacheRead;
     if (!byModel[model]) byModel[model] = { model, input: 0, output: 0, cacheRead: 0, sessions: 0, estUsd: 0 };
     byModel[model].input += input;
     byModel[model].output += output;
     byModel[model].cacheRead += cacheRead;
     byModel[model].sessions += 1;
     byModel[model].estUsd += estUsd;
-    totals.input += input; totals.output += output; totals.cacheRead += cacheRead; totals.sessions += 1; totals.estUsd += estUsd;
+    totals.input += input;
+    totals.output += output;
+    totals.cacheRead += cacheRead;
+    totals.sessions += 1;
+    totals.estUsd += estUsd;
   }
+
+  const modelRows = Object.values(byModel).sort((a, b) => b.estUsd - a.estUsd);
+  const codex = modelRows.find((r) => String(r.model).toLowerCase().includes('codex')) || { model: 'gpt-5.3-codex', input: 0, output: 0, cacheRead: 0, sessions: 0, estUsd: 0 };
+
   return {
     day: today,
     currency: 'USD',
     estimated: true,
+    dataSource,
+    lastUpdatedAt: new Date(lastUpdatedAt || Date.now()).toISOString(),
     note: 'Costos estimados con tarifa por modelo; conecta billing API para cifras exactas.',
     totals,
-    byModel: Object.values(byModel).sort((a,b)=>b.estUsd-a.estUsd),
+    codex,
+    byModel: modelRows,
     connectedApis: [
-      { name: 'OpenClaw/Gateway', connected: true, spendUsd: totals.estUsd },
+      { name: 'OpenClaw/Gateway', connected: dataSource === 'openclaw', spendUsd: totals.estUsd },
       { name: 'WhatsApp (linked channel)', connected: true, spendUsd: null },
       { name: 'Telegram bot', connected: true, spendUsd: null }
     ]
@@ -207,10 +224,10 @@ export const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/costs') {
     try {
       const status = await getOpenClawStatus();
-      return send(res, 200, buildCosts(status));
+      return send(res, 200, buildCosts(status, 'openclaw-status'));
     } catch {
       const fb = await loadSessionsFallback();
-      return send(res, 200, buildCosts(fb));
+      return send(res, 200, buildCosts(fb, 'sessions-fallback'));
     }
   }
 
@@ -325,6 +342,75 @@ export const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/team' && req.method === 'GET') {
     const store = await loadStore();
     return send(res, 200, { items: store.teamRoles });
+  }
+
+  if (url.pathname === '/api/shorts-intel' && req.method === 'GET') {
+    const store = await loadStore();
+    if (!store.shortsIntel) {
+      store.shortsIntel = generateMockShortsIntel();
+      await saveStore(store);
+    }
+
+    const data = store.shortsIntel;
+    const byNiche = data.niches.map((n) => {
+      const channels = data.channels.filter((c) => c.nicheId === n.id);
+      const avgViews = channels.length ? Math.round(channels.reduce((acc, c) => acc + Number(c.avgViews || 0), 0) / channels.length) : 0;
+      const topChannel = channels.slice().sort((a, b) => Number(b.avgViews || 0) - Number(a.avgViews || 0))[0] || null;
+      return {
+        niche: n,
+        channelsCount: channels.length,
+        avgViews,
+        topChannel
+      };
+    }).sort((a, b) => Number(b.niche.momentumScore || 0) - Number(a.niche.momentumScore || 0));
+
+    return send(res, 200, { ...data, ranking: byNiche, totals: { niches: data.niches.length, channels: data.channels.length, videos: data.videos.length } });
+  }
+
+  if (url.pathname === '/api/shorts-intel/niches' && req.method === 'GET') {
+    const store = await loadStore();
+    const data = store.shortsIntel || generateMockShortsIntel();
+    return send(res, 200, { items: data.niches });
+  }
+
+  if (url.pathname === '/api/shorts-intel/channels' && req.method === 'GET') {
+    const nicheId = url.searchParams.get('nicheId');
+    const store = await loadStore();
+    const data = store.shortsIntel || generateMockShortsIntel();
+    const items = (nicheId ? data.channels.filter((c) => c.nicheId === nicheId) : data.channels)
+      .slice()
+      .sort((a, b) => Number(b.avgViews || 0) - Number(a.avgViews || 0));
+    return send(res, 200, { items });
+  }
+
+  if (url.pathname === '/api/shorts-intel/videos' && req.method === 'GET') {
+    const channelId = url.searchParams.get('channelId');
+    const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit') || 20)));
+    const store = await loadStore();
+    const data = store.shortsIntel || generateMockShortsIntel();
+    const items = (channelId ? data.videos.filter((v) => v.channelId === channelId) : data.videos)
+      .slice()
+      .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+      .slice(0, limit);
+    return send(res, 200, { items });
+  }
+
+  if (url.pathname === '/api/shorts-intel/ingest' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const store = await loadStore();
+    const next = generateMockShortsIntel();
+
+    if (Array.isArray(body?.nicheIds) && body.nicheIds.length) {
+      const allowed = new Set(body.nicheIds.map(String));
+      next.niches = next.niches.filter((n) => allowed.has(n.id));
+      next.channels = next.channels.filter((c) => allowed.has(c.nicheId));
+      const channelSet = new Set(next.channels.map((c) => c.id));
+      next.videos = next.videos.filter((v) => channelSet.has(v.channelId));
+    }
+
+    store.shortsIntel = next;
+    await saveStore(store);
+    return send(res, 200, { ok: true, ingestedAt: next.generatedAt, totals: { niches: next.niches.length, channels: next.channels.length, videos: next.videos.length } });
   }
 
   if (url.pathname === '/api/office' && req.method === 'GET') {
