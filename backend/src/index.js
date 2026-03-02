@@ -139,6 +139,18 @@ function cronFromStatus(status) {
   return Array.isArray(jobs) ? jobs : [];
 }
 
+async function loadSessionsFallback() {
+  try {
+    const p = path.join('/data/.openclaw/agents/main/sessions', 'sessions.json');
+    const raw = await readFile(p, 'utf8');
+    const obj = JSON.parse(raw);
+    const recent = Object.entries(obj || {}).map(([key, v]) => ({ key, ...(v || {}) }));
+    return { sessions: { recent } };
+  } catch {
+    return { sessions: { recent: [] } };
+  }
+}
+
 async function listInstalledSkills() {
   try {
     const names = await readdir(SKILLS_DIR);
@@ -196,8 +208,9 @@ export const server = http.createServer(async (req, res) => {
     try {
       const status = await getOpenClawStatus();
       return send(res, 200, buildCosts(status));
-    } catch (error) {
-      return send(res, 500, { ok: false, error: String(error?.message || error) });
+    } catch {
+      const fb = await loadSessionsFallback();
+      return send(res, 200, buildCosts(fb));
     }
   }
 
